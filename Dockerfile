@@ -4,10 +4,13 @@ FROM node:20-slim AS builder
 WORKDIR /app
 
 # Install build tools for native modules (better-sqlite3 requires python/make/g++)
-RUN apt-get update && apt-get install -y \
+# We also run apt-get upgrade to patch OS-level vulnerabilities (e.g., gnutls, zlib)
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     python3 \
     make \
     g++ \
+    && apt-get autoremove -y \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
@@ -24,11 +27,13 @@ FROM node:20-slim
 WORKDIR /app
 
 # Install runtime dependencies for native modules (better-sqlite3)
-# We need these to recompile better-sqlite3 for the runtime environment if needed
-RUN apt-get update && apt-get install -y \
+# We also run apt-get upgrade to patch OS-level vulnerabilities in the final image
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     python3 \
     make \
     g++ \
+    && apt-get autoremove -y \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy package files
