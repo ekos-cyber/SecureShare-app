@@ -1,0 +1,133 @@
+# 🚀 SecureShare Deployment Guide
+
+This guide covers various scenarios for deploying SecureShare in production environments.
+
+## 📋 Prerequisites
+- Node.js 20+ (for manual installation)
+- Docker & Docker Compose (for containerized deployment)
+- A domain name (for HTTPS)
+- Basic knowledge of terminal/SSH
+
+---
+
+## 1. Manual Installation (Bare Metal / VPS)
+Use this if you want to run the app directly on a Linux server (Ubuntu/Debian).
+
+### Step 1: Clone and Install
+```bash
+git clone <your-repo-url>
+cd secureshare
+npm install
+```
+
+### Step 2: Build Frontend
+```bash
+npm run build
+```
+
+### Step 3: Configure Environment
+Create a `.env` file:
+```env
+PORT=3000
+NODE_ENV=production
+APP_URL=https://your-domain.com
+DB_PATH=./data/secrets.db
+```
+Ensure the data directory exists: `mkdir -p data`
+
+### Step 4: Run with PM2 (Recommended)
+PM2 keeps the app running in the background and restarts it if it crashes.
+```bash
+npm install -g pm2
+pm2 start npm --name "secureshare" -- run start:prod
+pm2 save
+pm2 startup
+```
+
+---
+
+## 2. Docker Deployment with HTTPS (Nginx + Let's Encrypt)
+This is the most professional way to deploy on a single VPS.
+
+### Step 1: Docker Compose
+Use the provided `docker-compose.yml`. Ensure you have a `data` folder.
+
+### Step 2: Nginx Reverse Proxy
+Install Nginx on your host and create a configuration `/etc/nginx/sites-available/secureshare`:
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### Step 3: SSL Certificate (Certbot)
+```bash
+sudo apt install certbot python3-certbot-nginx
+sudo certbot --nginx -d your-domain.com
+```
+
+---
+
+## 3. Google Cloud Platform (GCP) - Cloud Run
+Cloud Run is perfect for this app because it scales to zero and handles HTTPS automatically.
+
+### Step 1: Build and Push to Artifact Registry
+```bash
+gcloud builds submit --tag gcr.io/[PROJECT-ID]/secureshare
+```
+
+### Step 2: Deploy to Cloud Run
+```bash
+gcloud run deploy secureshare \
+  --image gcr.io/[PROJECT-ID]/secureshare \
+  --platform managed \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-env-vars="APP_URL=https://your-cloud-run-url.a.run.app,NODE_ENV=production"
+```
+
+> **Note on Persistence**: Cloud Run filesystems are ephemeral. For a production-grade setup, use **Google Cloud Storage (GCS)** or **Cloud SQL** if you modify the app to use PostgreSQL. For small scale, the `/tmp` fallback works but data is lost on container restart.
+
+---
+
+## 4. Microsoft Azure - App Service
+Azure App Service (Web App for Containers) is the easiest path on Azure.
+
+### Step 1: Push to Azure Container Registry (ACR)
+```bash
+az acr login --name [YOUR_REGISTRY_NAME]
+docker tag secureshare [YOUR_REGISTRY_NAME].azurecr.io/secureshare:v1
+docker push [YOUR_REGISTRY_NAME].azurecr.io/secureshare:v1
+```
+
+### Step 2: Create Web App
+1. Go to Azure Portal -> Create a Resource -> Web App.
+2. Select **Docker Container** as the Publish method.
+3. In the Docker tab, select your ACR image.
+4. In **Configuration**, add:
+   - `PORT` = `3000`
+   - `WEBSITES_PORT` = `3000`
+   - `APP_URL` = `https://your-app.azurewebsites.net`
+   - `NODE_ENV` = `production`
+
+---
+
+## 🔐 Security Checklist
+1. **HTTPS**: Never run this app over plain HTTP in production.
+2. **Database Permissions**: If running manually, ensure the `secrets.db` file is only readable by the user running the app (`chmod 600 data/secrets.db`).
+3. **Firewall**: Only expose ports 80 and 443. Keep port 3000 closed to the public (Nginx will handle it internally).
+4. **Monitoring**: Use tools like `uptime-kuma` or Cloud Monitoring to ensure the app is healthy.

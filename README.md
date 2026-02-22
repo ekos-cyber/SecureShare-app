@@ -31,8 +31,9 @@ To prevent automated guessing of access passwords:
 For a detailed analysis of security assumptions and mitigations, see [THREAT_MODEL.md](./THREAT_MODEL.md).
 
 ## 🚀 Deployment
+For detailed instructions on deploying to GCP, Azure, VPS, or using Docker with HTTPS, see the [Deployment Guide](./DEPLOYMENT.md).
 
-### Docker (Recommended)
+### Quick Docker Start (Local)
 ```bash
 docker build -t secureshare .
 docker run -d -p 3000:3000 -v $(pwd)/data:/app/data secureshare
