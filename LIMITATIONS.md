@@ -11,16 +11,16 @@ This document outlines the security assumptions, limitations, and intended use c
 ## 🛡️ Security Architecture
 -   **Client-Side Encryption**: Data is encrypted in the browser using **AES-256-GCM** (Web Crypto API).
 -   **Zero-Knowledge Server**: The server never sees the decryption key. The key is part of the URL fragment (`#key`), which is never sent to the server.
--   **Atomic Destruction**: The "burn" operation (delete after read) is performed in a single database transaction to prevent race conditions.
+-   **Atomic Destruction**: The "burn" operation (delete after read) is performed in a single **IMMEDIATE** database transaction to prevent race conditions.
 -   **Strict CSP**: Content Security Policy prevents XSS attacks.
 -   **HSTS**: Forces HTTPS connections.
 
 ## ⚠️ Known Limitations & Risks
 
-### 1. The "Trusting the Server" Problem
-Since this is a web application, you must trust the server to serve the correct, uncompromised JavaScript code.
-*   **Risk**: A compromised server could serve malicious JS that steals the key or data.
-*   **Mitigation**: Use Subresource Integrity (SRI) if possible (hard with dynamic builds), or use the Docker image on your own infrastructure.
+### 1. The "Trusting the Server" Problem (JS Integrity)
+Since this is a web application, you must trust the server to serve the correct, uncompromised JavaScript code. This is a fundamental limitation of all web-based E2EE tools.
+*   **Risk**: A compromised server could serve malicious JS that intercepts the decryption key from the URL fragment.
+*   **Mitigation**: We use a strict Content Security Policy (CSP) with nonces to prevent unauthorized script execution. However, if the server itself is compromised, the attacker can modify the legitimate JS. Users requiring absolute security should audit the source and host it on their own trusted infrastructure.
 
 ### 2. URL History & Proxies
 *   **Risk**: If a user copies the full URL (including the `#` fragment) into a tool that syncs history (e.g., browser sync), the key is stored in that history.

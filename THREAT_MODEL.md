@@ -19,8 +19,10 @@ This document outlines the security assumptions, trust boundaries, and threat mi
 - **Mitigation**: Mandatory HTTPS (TLS 1.2+), HSTS, and End-to-End Encryption.
 
 ### B. Malicious Server Administrator / Compromised Server
-- **Threat**: Accessing the database to read secrets.
-- **Mitigation**: Zero-Knowledge Architecture. The server never receives the decryption key (stored in URL fragment `#`). Ciphertexts are useless without the key.
+- **Threat**: Accessing the database to read secrets or modifying the application code.
+- **Mitigation**: 
+    - **Zero-Knowledge Storage**: The server never receives the decryption key (stored in URL fragment `#`). Ciphertexts are useless without the key.
+    - **JS Integrity Risk**: We acknowledge that a compromised server could serve malicious JavaScript to intercept keys. We mitigate this via strict CSP, HSTS, and by keeping the client-side code minimal and auditable. This is a fundamental limitation of web-based E2EE.
 
 ### C. Brute-Force Attacker
 - **Threat**: Guessing the access password for a known secret ID.
@@ -40,6 +42,11 @@ This document outlines the security assumptions, trust boundaries, and threat mi
 - **Mitigation**: 
     - Strict Content Security Policy (CSP) with Nonce-based script execution.
     - No `unsafe-inline` or `unsafe-eval` allowed.
+
+### F. Race Condition (Double Read)
+- **Threat**: Two users accessing a "one-time" secret simultaneously, both receiving the content before the first one is deleted.
+- **Mitigation**: 
+    - **Atomic Transactions**: We use `IMMEDIATE` database transactions in SQLite. This locks the database for writing at the start of the read operation, ensuring that the "Check -> Verify -> Delete" sequence is truly atomic and race-condition free.
 
 ## 4. What we do NOT guarantee
 - **Endpoint Security**: We cannot protect against keyloggers, screen scrapers, or compromised browsers on the user's device.

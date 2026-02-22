@@ -294,6 +294,7 @@ async function startServer() {
     try {
       // ATOMIC TRANSACTION: Check, Verify, and Update/Delete in one go
       // Refactored to keep cognitive complexity low (< 15)
+      // Using .immediate() to prevent race conditions in SQLite
       const transaction = db.transaction(() => {
         const secret = db.prepare("SELECT * FROM secrets WHERE id = ?").get(id) as any;
         
@@ -311,7 +312,7 @@ async function startServer() {
         return { status: 200, body: viewResult };
       });
 
-      const txResult = transaction();
+      const txResult = transaction.immediate();
       res.status(txResult.status).json(txResult.body);
 
     } catch (error) {
