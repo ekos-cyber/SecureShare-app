@@ -1,34 +1,31 @@
-# SecureShare - Enterprise-Grade Encrypted Secret Sharing
+# 🛡️ SecureShare - Security Architecture
 
-SecureShare is a high-security, end-to-end encrypted platform for sharing sensitive information like passwords, API keys, and private notes. It is designed with a "Zero-Knowledge" architecture, meaning the server never sees the raw secret or the master password.
+SecureShare is a high-security, zero-knowledge platform for sharing sensitive information. It is designed with a "Privacy by Design" approach, ensuring that even the server hosting the data cannot access the content.
 
-## 🛡️ Security Architecture
+## 🔐 Core Security Principles
 
 ### 1. End-to-End Encryption (E2EE)
-- **Client-Side Encryption**: All encryption happens in the browser using the `crypto-js` library.
-- **Algorithm**: AES-256.
-- **Key Derivation**: SHA-256 based derivation with a unique salt for each secret.
-- **Zero-Knowledge**: The decryption key is part of the URL fragment (`#`), which is never sent to the server.
+All encryption and decryption happen exclusively in the user's browser.
+- **Algorithm**: AES-256-CBC.
+- **Key Storage**: The unique decryption key is generated on the client and stored in the URL fragment (the part after the `#`). 
+- **Zero-Knowledge**: Per W3C standards, the URL fragment is **never sent to the server**. Our infrastructure only sees the encrypted blob, never the key.
 
-### 2. Brute-Force Protection
-- **Burn-on-Fail Policy**: Secrets protected by an access password are permanently deleted after **3 failed attempts**.
-- **Rate Limiting**: 
-    - Global protection against DDoS.
-    - Limits on secret creation (100/hour per IP).
-    - Limits on authentication attempts.
+### 2. Strong Key Derivation (KDF)
+When an optional access password is set, we don't use it directly as a key.
+- **Mechanism**: PBKDF2 (Password-Based Key Derivation Function 2).
+- **Parameters**: 100,000 iterations with SHA-256.
+- **Salt**: Every secret has a unique, cryptographically secure random salt generated on the client.
 
-### 3. Ephemeral Storage
-- **One-Time Links**: Secrets are automatically deleted after a configurable view limit (default: 1).
-- **Remaining Views**: The recipient is informed how many views are left before the secret is destroyed.
-- **Auto-Expiration**: Secrets are purged from the database after a set time (1h, 24h, or 7 days).
-- **Periodic Cleanup**: A background worker ensures expired data is wiped every 5 minutes.
+### 3. Brute-Force Protection (Burn-on-Fail)
+To prevent automated guessing of access passwords:
+- **Limit**: A secret is **permanently deleted** from the database after 3 failed password attempts.
+- **Rate Limiting**: Strict IP-based and global rate limits are enforced on all API endpoints.
 
-### 4. Infrastructure Security
-- **Secure Headers**: Powered by `helmet` (CSP with Nonce, HSTS, XSS protection).
-- **Permissions Policy**: Restricts browser features (camera, microphone, etc.).
-- **Input Validation**: Strict schema validation using `zod`.
-- **Proxy Trust**: Configured to work securely behind reverse proxies (Nginx, Traefik, Cloudflare).
-- **Hardening**: It is recommended to set filesystem permissions for the database file to `600` and ensure the server runs under a non-privileged user.
+### 4. Hardened Infrastructure
+- **CSP with Nonce**: A strict Content Security Policy prevents Cross-Site Scripting (XSS). We use unique nonces for every request, disabling `unsafe-inline` and `unsafe-eval`.
+- **HSTS**: HTTP Strict Transport Security ensures all connections are forced over HTTPS.
+- **Permissions Policy**: Disables all unnecessary browser features (camera, microphone, geolocation) to reduce the attack surface.
+- **Opaque Errors**: The API returns identical 404 errors for non-existent, expired, or already burned secrets to prevent ID enumeration.
 
 ## 🛡️ Threat Model
 For a detailed analysis of security assumptions and mitigations, see [THREAT_MODEL.md](./THREAT_MODEL.md).
@@ -36,37 +33,17 @@ For a detailed analysis of security assumptions and mitigations, see [THREAT_MOD
 ## 🚀 Deployment
 
 ### Docker (Recommended)
-The easiest way to deploy SecureShare is using Docker.
-
 ```bash
-# Build the image
 docker build -t secureshare .
-
-# Run the container
-docker run -d \
-  -p 3000:3000 \
-  -v $(pwd)/data:/app/data \
-  -e DB_PATH=/app/data/secrets.db \
-  -e APP_URL=https://your-domain.com \
-  -e NODE_ENV=production \
-  secureshare
+docker run -d -p 3000:3000 -v $(pwd)/data:/app/data secureshare
 ```
 
-### Manual Production Build
-1. Install dependencies: `npm install`
-2. Build the frontend: `npm run build`
-3. Start the server: `NODE_ENV=production npm start`
-
-## ⚙️ Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Port to listen on | `3000` |
-| `DB_PATH` | Path to SQLite database file | `secrets.db` |
-| `APP_URL` | Your public domain (used for CORS and links) | `http://localhost:3000` |
-| `NODE_ENV` | Environment (`production` / `development`) | `development` |
-
 ## 🛠️ Technology Stack
-- **Frontend**: React, Tailwind CSS, Lucide Icons, Framer Motion.
-- **Backend**: Node.js, Express, Better-SQLite3.
-- **Security**: Crypto-JS, Zod, Helmet, Express-Rate-Limit.
+- **Frontend**: React 19, Tailwind CSS 4, Motion.
+- **Backend**: Node.js (Express) with `helmet` and `express-rate-limit`.
+- **Database**: SQLite with indexed TTL (Time-To-Live) for high-performance automated cleanup.
+- **Encryption**: CryptoJS (AES-256, PBKDF2, SHA-256).
+
+## 📋 Compliance & Standards
+- **RFC 9116**: `security.txt` is implemented at `/.well-known/security.txt`.
+- **Opaque Errors**: Prevents enumeration attacks.
