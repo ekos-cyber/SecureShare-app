@@ -1,108 +1,157 @@
-import * as CryptoJS from 'crypto-js';
+/**
+ * Web Crypto API Implementation
+ * Uses native browser cryptography for maximum security and performance.
+ * Algorithms: AES-GCM (Authenticated Encryption), PBKDF2 (Key Derivation), SHA-256 (Hashing).
+ */
+
+// Helper to convert ArrayBuffer to Base64
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return window.btoa(binary);
+}
+
+// Helper to convert Base64 to Uint8Array
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binary_string = window.atob(base64);
+  const len = binary_string.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binary_string.charCodeAt(i);
+  }
+  return bytes;
+}
+
+// Helper to convert string to Uint8Array
+function stringToUint8Array(str: string): Uint8Array {
+  const encoder = new TextEncoder();
+  return encoder.encode(str);
+}
 
 /**
- * Generates a cryptographically secure random string using the Web Crypto API.
- * This is used for generating encryption keys and salts.
+ * Generates a cryptographically secure random string.
  */
 function generateSecureRandomString(length: number): string {
   const array = new Uint8Array(length);
-  try {
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
-      // Use browser's secure random generator
-      window.crypto.getRandomValues(array);
-    } else {
-      throw new Error("Crypto not available");
-    }
-  } catch (e) {
-    // Fallback for environments where crypto is restricted or unavailable
-    for (let i = 0; i < length; i++) {
-      array[i] = Math.floor(Math.random() * 256);
-    }
-  }
-  // Convert bytes to a base36 string for URL compatibility
+  window.crypto.getRandomValues(array);
   return Array.from(array, (byte) => byte.toString(36)).join('').substring(0, length);
 }
 
 /**
- * Derives a strong encryption key from a base key, password, and salt using PBKDF2.
- * PBKDF2 with 100,000 iterations is a standard recommendation for high security.
+ * Derives a strong encryption key using PBKDF2.
  */
-function deriveKey(baseKey: string, password?: string, salt?: string): string {
-  if (!password || !salt) return baseKey;
+async function deriveKey(baseKey: string, password?: string, salt?: string): Promise<CryptoKey> {
+  const enc = new TextEncoder();
   
-  // Combine baseKey and password for the derivation
-  const combinedPassword = baseKey + password;
+  // 1. Import the base key material
+  const keyMaterial = await window.crypto.subtle.importKey(
+    "raw",
+    enc.encode(baseKey + (password || "")),
+    { name: "PBKDF2" },
+    false,
+    ["deriveBits", "deriveKey"]
+  );
+
+  // 2. Derive the actual AES-GCM key
+  // If no salt is provided (no password case), we use a fixed salt or the baseKey itself as salt?
+  // Actually, for the no-password case, we can just import the baseKey directly as AES-GCM?
+  // But to keep it uniform, let's use PBKDF2 always.
+  // If salt is missing, we use an empty salt (not ideal but consistent with legacy logic if any).
+  // However, the caller should provide a salt if password is used.
   
-  // Use PBKDF2 with 100,000 iterations
-  const derived = CryptoJS.PBKDF2(combinedPassword, salt, {
-    keySize: 256 / 32,
-    iterations: 100000,
-    hasher: CryptoJS.algo.SHA256
-  });
-  
-  return derived.toString();
+  const saltBuffer = salt ? enc.encode(salt) : new Uint8Array(16); // Default salt if none (should not happen for password case)
+
+  return window.crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: saltBuffer,
+      iterations: 100000,
+      hash: "SHA-256"
+    },
+    keyMaterial,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
 }
 
 /**
- * Encrypts a string using AES-256.
- * 
- * SECURITY ARCHITECTURE:
- * 1. A random 32-char key is generated on the client.
- * 2. This key is returned but NOT sent to the server. It stays in the URL fragment (#).
- * 3. If a password is provided, we derive a stronger encryption key using PBKDF2.
- * 4. The server only receives the encrypted blob and (if applicable) the salt/password hash.
+ * Encrypts a string using AES-GCM.
  */
-export function encryptSecret(text: string, password?: string): { encryptedData: string; key: string; salt?: string } {
-  try {
-    const key = generateSecureRandomString(32);
-    const salt = password ? generateSecureRandomString(16) : undefined;
-    
-    // Derive the final encryption key using PBKDF2
-    const encryptionKey = deriveKey(key, password, salt);
-    
-    // Perform AES encryption
-    const encrypted = CryptoJS.AES.encrypt(text, encryptionKey).toString();
-    
-    return {
-      encryptedData: encrypted,
-      key: key,
-      salt: salt
-    };
-  } catch (e) {
-    console.error("Encryption error:", e);
-    throw new Error("Encryption failed. This might be due to browser security restrictions.");
-  }
+export async function encryptSecret(text: string, password?: string): Promise<{ encryptedData: string; key: string; salt?: string }> {
+  const key = generateSecureRandomString(32);
+  const salt = password ? generateSecureRandomString(16) : undefined;
+  
+  // Derive key
+  const cryptoKey = await deriveKey(key, password, salt);
+  
+  // Generate IV (12 bytes for GCM)
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  
+  // Encrypt
+  const encodedText = new TextEncoder().encode(text);
+  const encryptedBuffer = await window.crypto.subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv: iv
+    },
+    cryptoKey,
+    encodedText
+  );
+  
+  // Combine IV + Ciphertext
+  const combined = new Uint8Array(iv.length + encryptedBuffer.byteLength);
+  combined.set(iv);
+  combined.set(new Uint8Array(encryptedBuffer), iv.length);
+  
+  return {
+    encryptedData: arrayBufferToBase64(combined.buffer),
+    key: key,
+    salt: salt
+  };
 }
 
 /**
- * Decrypts a string using AES-256.
- * Requires the key (from URL fragment) and optional password.
+ * Decrypts a string using AES-GCM.
  */
-export function decryptSecret(encryptedData: string, key: string, password?: string, salt?: string): string {
+export async function decryptSecret(encryptedData: string, key: string, password?: string, salt?: string): Promise<string> {
   try {
-    // Re-derive the decryption key using PBKDF2
-    const decryptionKey = deriveKey(key, password, salt);
+    // Decode base64
+    const combined = base64ToUint8Array(encryptedData);
     
-    const bytes = CryptoJS.AES.decrypt(encryptedData, decryptionKey);
-    const originalText = bytes.toString(CryptoJS.enc.Utf8);
+    // Extract IV (first 12 bytes)
+    const iv = combined.slice(0, 12);
+    const ciphertext = combined.slice(12);
     
-    // If decryption fails (wrong key/password), originalText will be empty
-    if (!originalText) {
-      throw new Error("Invalid key or password");
-    }
+    // Derive key
+    const cryptoKey = await deriveKey(key, password, salt);
     
-    return originalText;
+    // Decrypt
+    const decryptedBuffer = await window.crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: iv
+      },
+      cryptoKey,
+      ciphertext
+    );
+    
+    return new TextDecoder().decode(decryptedBuffer);
   } catch (e) {
     console.error("Decryption error:", e);
-    if (e instanceof Error && e.message === "Invalid key or password") throw e;
-    throw new Error("Decryption failed. This might be due to browser security restrictions.");
+    throw new Error("Invalid key or password");
   }
 }
 
 /**
  * Hashes a password with a salt using SHA-256.
- * This hash is sent to the server to verify access without sending the actual password.
  */
-export function hashPassword(password: string, salt: string): string {
-  return CryptoJS.SHA256(password + salt).toString();
+export async function hashPassword(password: string, salt: string): Promise<string> {
+  const msgBuffer = new TextEncoder().encode(password + salt);
+  const hashBuffer = await window.crypto.subtle.digest('SHA-256', msgBuffer);
+  return arrayBufferToBase64(hashBuffer);
 }

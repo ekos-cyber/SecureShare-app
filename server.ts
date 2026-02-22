@@ -107,7 +107,7 @@ async function startServer() {
       includeSubDomains: true,
       preload: true,
     },
-    referrerPolicy: { policy: "strict-origin-when-cross-origin" },
+    referrerPolicy: { policy: "no-referrer" },
     noSniff: true,
     crossOriginEmbedderPolicy: false,
     frameguard: false, // Handled by CSP frame-ancestors

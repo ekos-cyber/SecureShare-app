@@ -527,13 +527,22 @@ export default function App() {
                 )}
               </div>
 
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-900/30 rounded-2xl p-5 text-left mb-8 shadow-sm">
+              <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-900/30 rounded-2xl p-5 text-left mb-8 shadow-sm space-y-4">
                 <div className="flex gap-4">
-                  <AlertCircle className="w-6 h-6 text-amber-600 dark:text-amber-500 shrink-0" />
+                  <Info className="w-6 h-6 text-blue-600 dark:text-blue-500 shrink-0" />
                   <div>
-                    <p className="text-sm font-bold text-amber-900 dark:text-amber-200">Security Tip</p>
-                    <p className="text-sm text-amber-800 dark:text-amber-300 leading-relaxed">
-                      Don't send the access password through the same channel as the link. Use a different app or call the recipient.
+                    <p className="text-sm font-bold text-blue-900 dark:text-blue-200">Safe for Messaging Apps</p>
+                    <p className="text-sm text-blue-800 dark:text-blue-300 leading-relaxed mt-1">
+                      Link previews (Teams, Slack bots) <strong>will not</strong> burn your secret. The secret is only accessed when you explicitly click "Decrypt".
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-4">
+                  <Shield className="w-6 h-6 text-blue-600 dark:text-blue-500 shrink-0" />
+                  <div>
+                    <p className="text-sm font-bold text-blue-900 dark:text-blue-200">Best Practice</p>
+                    <p className="text-sm text-blue-800 dark:text-blue-300 leading-relaxed mt-1">
+                      Send the link and the password via separate channels (e.g. Teams + SMS) for maximum security.
                     </p>
                   </div>
                 </div>
