@@ -1,0 +1,11 @@
+services:
+  secureshare:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - APP_URL=http://localhost:3000
+    restart: always

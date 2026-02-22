@@ -1,37 +1,51 @@
-# Stage 1: Build the frontend assets
-FROM node:18-alpine AS builder
+# Stage 1: Build the frontend
+FROM node:20-slim AS builder
 WORKDIR /app
 
-# Copy package files and install dependencies
+# Install build dependencies for native modules (better-sqlite3)
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY package*.json ./
 RUN npm install
 
-# Copy the rest of the application source code
 COPY . .
-
-# Build the React application
 RUN npm run build
 
-# Stage 2: Create the final production image
-FROM node:18-alpine
+# Stage 2: Production environment
+FROM node:20-slim
 WORKDIR /app
 
-# Set production environment
+# Install runtime dependencies for native modules
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
+
 ENV NODE_ENV=production
 
-# Copy package files and install only production dependencies
+# Copy package files and install ALL dependencies 
+# (we need devDeps like tsx and typescript to run the server)
 COPY package*.json ./
-RUN npm install --only=production
+RUN npm install
 
-# Copy the built frontend assets from the builder stage
+# Copy built assets from builder
 COPY --from=builder /app/dist ./dist
+# Copy source files needed for the server
+COPY server.ts .
+COPY tsconfig.json .
+COPY src/lib ./src/lib
+COPY index.html .
 
-# Copy the server and other necessary files
-COPY server.ts . 
-COPY src/lib src/lib
+# Create a directory for the database
+RUN mkdir -p /app/data && chmod 777 /app/data
+ENV DB_PATH=/app/data/secrets.db
 
-# Expose the port the app runs on
 EXPOSE 3000
 
-# Command to run the application
-CMD ["npm", "run", "start:prod"]
+# Use tsx to run the server directly
+CMD ["npx", "tsx", "server.ts"]
