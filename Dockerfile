@@ -19,19 +19,22 @@ RUN npm run build
 FROM node:20-slim
 WORKDIR /app
 
-# Install runtime dependencies for native modules
+# Install runtime dependencies for native modules (better-sqlite3)
 RUN apt-get update && apt-get install -y \
     python3 \
     make \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-ENV NODE_ENV=production
-
-# Copy package files and install ALL dependencies 
-# (we need devDeps like tsx and typescript to run the server)
+# Copy package files
 COPY package*.json ./
+
+# IMPORTANT: Install ALL dependencies first so 'tsx' is available
+# We set NODE_ENV=production AFTER this step
 RUN npm install
+
+# Now set production environment
+ENV NODE_ENV=production
 
 # Copy built assets from builder
 COPY --from=builder /app/dist ./dist
@@ -47,5 +50,5 @@ ENV DB_PATH=/app/data/secrets.db
 
 EXPOSE 3000
 
-# Use tsx to run the server directly
+# Use npx tsx to run the server directly
 CMD ["npx", "tsx", "server.ts"]
