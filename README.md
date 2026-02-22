@@ -33,11 +33,31 @@ For a detailed analysis of security assumptions and mitigations, see [THREAT_MOD
 ## 🚀 Deployment
 For detailed instructions on deploying to GCP, Azure, VPS, or using Docker with HTTPS, see the [Deployment Guide](./DEPLOYMENT.md).
 
+**IMPORTANT**: Before deploying, read the [Security Limitations](./LIMITATIONS.md) and [Threat Model](./THREAT_MODEL.md) to understand what this app protects against and what it does not.
+
 ### Quick Docker Start (Local)
 ```bash
+# Build the image
 docker build -t secureshare .
+
+# Run the container (maps port 3000 and persists data to ./data)
 docker run -d -p 3000:3000 -v $(pwd)/data:/app/data secureshare
 ```
+
+## 🛠️ Development
+```bash
+# Install dependencies
+npm install
+
+# Start development server (Express + Vite)
+npm run dev
+```
+
+## 🧪 Security Features
+-   **AES-256-GCM Encryption**: Authenticated encryption using Web Crypto API.
+-   **Atomic Transactions**: Prevents race conditions during secret destruction.
+-   **Zero-Knowledge**: Server never sees the decryption key.
+-   **Rate Limiting**: Protects against brute-force and DoS.
 
 ## 🛠️ Technology Stack
 - **Frontend**: React 19, Tailwind CSS 4, Motion.

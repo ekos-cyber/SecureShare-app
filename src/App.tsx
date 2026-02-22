@@ -160,17 +160,19 @@ export default function App() {
   const handleGenerate = async () => {
     /**
      * SECRET CREATION FLOW
-     * 1. Encrypt data locally using a random key.
-     * 2. Send the encrypted blob to the server.
-     * 3. Construct a link containing the ID and the decryption key (in the # fragment).
+     * 1. Encrypt data locally using Web Crypto API (AES-GCM).
+     * 2. The encryption key is generated locally and NEVER sent to the server.
+     * 3. Send only the encrypted blob (ciphertext) to the server.
+     * 4. Construct a link containing the ID and the decryption key (in the # fragment).
+     *    The fragment is not sent to the server in HTTP requests.
      */
     if (!secret.trim()) return;
     setLoading(true);
     setError('');
     
     try {
-      const { encryptedData, key, salt } = encryptSecret(secret, password);
-      const pHash = (password && salt) ? hashPassword(password, salt) : null;
+      const { encryptedData, key, salt } = await encryptSecret(secret, password);
+      const pHash = (password && salt) ? await hashPassword(password, salt) : null;
       
       const res = await fetch('/api/secrets', {
         method: 'POST',
@@ -211,13 +213,14 @@ export default function App() {
   const handleDecrypt = async () => {
     /**
      * DECRYPTION & BURNING FLOW
-     * 1. Decrypt the blob locally using the key from the URL and optional password.
-     * 2. Notify the server to "burn" the secret (increment view count or delete).
+     * 1. Decrypt the blob locally using the key from the URL fragment.
+     * 2. This happens entirely in the browser. The server never sees the plaintext.
+     * 3. After successful decryption, notify the server to "burn" the secret (increment view count).
      */
     setError('');
     try {
-      const decrypted = decryptSecret(viewEncryptedData, viewKey, viewPassword, viewSalt);
-      const pHash = (viewPassword && viewSalt) ? hashPassword(viewPassword, viewSalt) : null;
+      const decrypted = await decryptSecret(viewEncryptedData, viewKey, viewPassword, viewSalt);
+      const pHash = (viewPassword && viewSalt) ? await hashPassword(viewPassword, viewSalt) : null;
       
       // Burn the secret (increment view count)
       const res = await fetch(`/api/secrets/${viewId}/burn`, {

@@ -1,3 +1,17 @@
+/**
+ * SECURESHARE SERVER
+ * 
+ * This is the main server file for the SecureShare application.
+ * It handles API requests, serves the frontend, and manages the SQLite database.
+ * 
+ * SECURITY FEATURES IMPLEMENTED:
+ * 1. Content Security Policy (CSP): Prevents XSS attacks by restricting sources.
+ * 2. HSTS: Enforces HTTPS connections.
+ * 3. Rate Limiting: Prevents abuse and brute-force attacks.
+ * 4. Atomic Transactions: Ensures "burn-after-reading" logic is race-condition free.
+ * 5. Input Validation: Uses Zod to strictly validate all incoming data.
+ */
+
 import express from "express";
 import Database from "better-sqlite3";
 import { v4 as uuidv4 } from "uuid";
@@ -13,7 +27,10 @@ import ejs from 'ejs';
 /**
  * DATABASE INITIALIZATION
  * We use SQLite for lightweight, persistent storage.
- * The database stores encrypted blobs, expiration dates, and view limits.
+ * The database stores encrypted blobs (AES-GCM ciphertext), expiration dates, and view limits.
+ * 
+ * NOTE: In production (Cloud Run/Azure), use a persistent volume for 'secrets.db' 
+ * to avoid data loss on container restarts.
  */
 const getDatabase = () => {
   const dbPath = process.env.DB_PATH || path.join(process.cwd(), "secrets.db");
@@ -228,53 +245,65 @@ async function startServer() {
     const { passwordHash } = result.data;
 
     try {
-      const secret = db.prepare("SELECT * FROM secrets WHERE id = ?").get(id) as any;
-      if (!secret) return res.status(404).json({ error: "Not found" });
+      // ATOMIC TRANSACTION: Check, Verify, and Update/Delete in one go
+      const transaction = db.transaction(() => {
+        const secret = db.prepare("SELECT * FROM secrets WHERE id = ?").get(id) as any;
+        
+        if (!secret) {
+          return { status: 404, body: { error: "Not found" } };
+        }
 
-      /**
-       * BRUTE-FORCE PROTECTION
-       * If a password is set, we verify the hash.
-       * After 3 failed attempts, the secret is PERMANENTLY DELETED.
-       */
-      if (secret.password_hash) {
-        if (!passwordHash || passwordHash !== secret.password_hash) {
-          const newFailedAttempts = (secret.failed_attempts || 0) + 1;
-          const MAX_ATTEMPTS = 3;
+        /**
+         * BRUTE-FORCE PROTECTION
+         */
+        if (secret.password_hash) {
+          if (!passwordHash || passwordHash !== secret.password_hash) {
+            const newFailedAttempts = (secret.failed_attempts || 0) + 1;
+            const MAX_ATTEMPTS = 3;
 
-          if (newFailedAttempts >= MAX_ATTEMPTS) {
-            db.prepare("DELETE FROM secrets WHERE id = ?").run(id);
-            console.log(`[Security] Secret ${id} burned after ${MAX_ATTEMPTS} failed attempts.`);
-            return res.status(401).json({ error: "Too many failed attempts. Secret has been permanently deleted." });
-          } else {
-            db.prepare("UPDATE secrets SET failed_attempts = ? WHERE id = ?").run(newFailedAttempts, id);
-            return res.status(401).json({ 
-              error: `Invalid password. ${MAX_ATTEMPTS - newFailedAttempts} attempts remaining before permanent deletion.` 
-            });
+            if (newFailedAttempts >= MAX_ATTEMPTS) {
+              db.prepare("DELETE FROM secrets WHERE id = ?").run(id);
+              console.log(`[Security] Secret ${id} burned after ${MAX_ATTEMPTS} failed attempts.`);
+              return { status: 401, body: { error: "Too many failed attempts. Secret has been permanently deleted." } };
+            } else {
+              db.prepare("UPDATE secrets SET failed_attempts = ? WHERE id = ?").run(newFailedAttempts, id);
+              return { 
+                status: 401, 
+                body: { error: `Invalid password. ${MAX_ATTEMPTS - newFailedAttempts} attempts remaining before permanent deletion.` } 
+              };
+            }
           }
         }
-      }
 
-      /**
-       * VIEW LIMIT LOGIC
-       * Increment view count. If limit reached, delete the secret.
-       */
-      const newCount = secret.view_count + 1;
-      const isBurned = newCount >= secret.view_limit;
-      const remaining = Math.max(0, secret.view_limit - newCount);
+        /**
+         * VIEW LIMIT LOGIC
+         */
+        const newCount = secret.view_count + 1;
+        const isBurned = newCount >= secret.view_limit;
+        const remaining = Math.max(0, secret.view_limit - newCount);
 
-      if (isBurned) {
-        db.prepare("DELETE FROM secrets WHERE id = ?").run(id);
-        console.log(`[ViewLimit] Secret ${id} deleted after reaching view limit (${secret.view_limit}).`);
-      } else {
-        db.prepare("UPDATE secrets SET view_count = ? WHERE id = ?").run(newCount, id);
-      }
+        if (isBurned) {
+          db.prepare("DELETE FROM secrets WHERE id = ?").run(id);
+          console.log(`[ViewLimit] Secret ${id} deleted after reaching view limit (${secret.view_limit}).`);
+        } else {
+          db.prepare("UPDATE secrets SET view_count = ? WHERE id = ?").run(newCount, id);
+        }
 
-      res.json({ 
-        success: true, 
-        burned: isBurned,
-        remaining: remaining
+        return { 
+          status: 200, 
+          body: { 
+            success: true, 
+            burned: isBurned,
+            remaining: remaining
+          }
+        };
       });
+
+      const txResult = transaction();
+      res.status(txResult.status).json(txResult.body);
+
     } catch (error) {
+      console.error("Transaction error:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   });

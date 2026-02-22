@@ -1,8 +1,9 @@
 # Stage 1: Build the frontend
+# We use a multi-stage build to keep the final image small.
 FROM node:20-slim AS builder
 WORKDIR /app
 
-# Install build dependencies for native modules (better-sqlite3)
+# Install build tools for native modules (better-sqlite3 requires python/make/g++)
 RUN apt-get update && apt-get install -y \
     python3 \
     make \
@@ -10,16 +11,20 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
+# Install ALL dependencies (including devDependencies) to build the frontend
 RUN npm install
 
 COPY . .
+# Build the React frontend (Vite) -> outputs to /dist
 RUN npm run build
 
 # Stage 2: Production environment
+# This is the final image that will run in production.
 FROM node:20-slim
 WORKDIR /app
 
 # Install runtime dependencies for native modules (better-sqlite3)
+# We need these to recompile better-sqlite3 for the runtime environment if needed
 RUN apt-get update && apt-get install -y \
     python3 \
     make \
@@ -29,26 +34,31 @@ RUN apt-get update && apt-get install -y \
 # Copy package files
 COPY package*.json ./
 
-# IMPORTANT: Install ALL dependencies first so 'tsx' is available
-# We set NODE_ENV=production AFTER this step
+# Install dependencies. 
+# NOTE: We install devDependencies too because we use 'tsx' to run the server.
+# In a strict production setup, you might want to transpile server.ts to JS and use 'node'.
 RUN npm install
 
-# Now set production environment
+# Set production environment variable
 ENV NODE_ENV=production
 
-# Copy built assets from builder
+# Copy built frontend assets from the builder stage
 COPY --from=builder /app/dist ./dist
-# Copy source files needed for the server
+
+# Copy backend source files
 COPY server.ts .
 COPY tsconfig.json .
+# We need src/lib because server.ts might import shared types or logic
 COPY src/lib ./src/lib
 COPY index.html .
 
-# Create a directory for the database
+# Create a directory for the SQLite database
+# We set 777 permissions to avoid permission issues in some container environments (like OpenShift)
 RUN mkdir -p /app/data && chmod 777 /app/data
 ENV DB_PATH=/app/data/secrets.db
 
+# Expose the port the app runs on
 EXPOSE 3000
 
-# Use npx tsx to run the server directly
+# Start the server using tsx (TypeScript execution)
 CMD ["npx", "tsx", "server.ts"]

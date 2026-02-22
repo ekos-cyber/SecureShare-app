@@ -127,7 +127,12 @@ docker push [YOUR_REGISTRY_NAME].azurecr.io/secureshare:v1
 ---
 
 ## 🔐 Security Checklist
-1. **HTTPS**: Never run this app over plain HTTP in production.
-2. **Database Permissions**: If running manually, ensure the `secrets.db` file is only readable by the user running the app (`chmod 600 data/secrets.db`).
-3. **Firewall**: Only expose ports 80 and 443. Keep port 3000 closed to the public (Nginx will handle it internally).
-4. **Monitoring**: Use tools like `uptime-kuma` or Cloud Monitoring to ensure the app is healthy.
+1.  **HTTPS**: Never run this app over plain HTTP in production. HSTS is enabled by default.
+2.  **Database Permissions**: If running manually, ensure the `secrets.db` file is only readable by the user running the app (`chmod 600 data/secrets.db`).
+3.  **Firewall**: Only expose ports 80 and 443. Keep port 3000 closed to the public (Nginx will handle it internally).
+4.  **Monitoring**: Use tools like `uptime-kuma` or Cloud Monitoring to ensure the app is healthy.
+5.  **Review Limitations**: Please read [LIMITATIONS.md](./LIMITATIONS.md) to understand the security model and what this app is NOT designed for.
+
+## 🛠️ Troubleshooting
+-   **"Crypto not available"**: Ensure you are accessing the app via `https://` or `localhost`. The Web Crypto API requires a secure context.
+-   **Database Locks**: If using SQLite on a network file system (NFS/EFS), you might encounter locking issues. Use a local volume or switch to PostgreSQL (requires code changes).
