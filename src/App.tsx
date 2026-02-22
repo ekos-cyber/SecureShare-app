@@ -46,6 +46,36 @@ const getPasswordStrength = (pwd: string) => {
   return Math.min(strength, 4);
 };
 
+/**
+ * Helper to get password strength color based on level
+ */
+const getPasswordStrengthColor = (strength: number, level: number) => {
+  if (strength < level) return "bg-slate-200 dark:bg-slate-800";
+  
+  const colors: Record<number, string> = {
+    1: "bg-red-500",
+    2: "bg-orange-500",
+    3: "bg-yellow-500",
+    4: "bg-emerald-500"
+  };
+  
+  return colors[strength] || "bg-emerald-500";
+};
+
+/**
+ * Helper to get password strength label
+ */
+const getPasswordStrengthLabel = (strength: number) => {
+  const labels: Record<number, string> = {
+    1: "Weak",
+    2: "Fair",
+    3: "Good",
+    4: "Strong"
+  };
+  
+  return labels[strength] || "";
+};
+
 export default function App() {
   /**
    * APPLICATION STATE
@@ -181,8 +211,8 @@ export default function App() {
           encryptedData,
           passwordHash: pHash,
           salt: salt,
-          expirationHours: parseInt(expiration),
-          viewLimit: parseInt(viewLimit)
+          expirationHours: Number.parseInt(expiration, 10),
+          viewLimit: Number.parseInt(viewLimit, 10)
         })
       });
       
@@ -266,7 +296,7 @@ export default function App() {
       } catch (e) {
         setError("Could not copy to clipboard. Please select and copy manually.");
       }
-      document.body.removeChild(textArea);
+      textArea.remove();
     }
   };
 
@@ -296,7 +326,7 @@ export default function App() {
           link.download = 'SecureShare-QR.svg';
           document.body.appendChild(link);
           link.click();
-          document.body.removeChild(link);
+          link.remove();
           URL.revokeObjectURL(url);
         }
       }
@@ -342,8 +372,9 @@ export default function App() {
             >
               <div className="space-y-8">
                 <div>
-                  <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2.5 ml-1">Your Secret</label>
+                  <label htmlFor="secret-input" className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2.5 ml-1">Your Secret</label>
                   <textarea
+                    id="secret-input"
                     value={secret}
                     onChange={(e) => setSecret(e.target.value)}
                     placeholder="Paste your password, API token, or message here..."
@@ -358,11 +389,12 @@ export default function App() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
-                    <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2.5 ml-1 flex items-center gap-2">
+                    <label htmlFor="expiration-select" className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2.5 ml-1 flex items-center gap-2">
                       <Clock className="w-4 h-4 text-indigo-500" /> Expiration
                     </label>
                     <div className="relative">
                       <select
+                        id="expiration-select"
                         value={expiration}
                         onChange={(e) => setExpiration(e.target.value)}
                         className="w-full p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-800/50 dark:text-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 appearance-none cursor-pointer font-medium"
@@ -377,11 +409,12 @@ export default function App() {
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2.5 ml-1 flex items-center gap-2">
+                    <label htmlFor="view-limit-select" className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2.5 ml-1 flex items-center gap-2">
                       <Eye className="w-4 h-4 text-indigo-500" /> View Limit
                     </label>
                     <div className="relative">
                       <select
+                        id="view-limit-select"
                         value={viewLimit}
                         onChange={(e) => setViewLimit(e.target.value)}
                         className="w-full p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-800/50 dark:text-white focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 appearance-none cursor-pointer font-medium"
@@ -398,11 +431,12 @@ export default function App() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2.5 ml-1 flex items-center gap-2">
+                  <label htmlFor="password-input" className="block text-sm font-bold text-slate-800 dark:text-slate-200 mb-2.5 ml-1 flex items-center gap-2">
                     <Lock className="w-4 h-4 text-indigo-500" /> Access Password (Optional)
                   </label>
                   <div className="relative">
                     <input
+                      id="password-input"
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
@@ -427,24 +461,14 @@ export default function App() {
                               key={level}
                               className={cn(
                                 "flex-1 rounded-full transition-all duration-500",
-                                strength >= level
-                                  ? strength === 1 ? "bg-red-500"
-                                    : strength === 2 ? "bg-orange-500"
-                                    : strength === 3 ? "bg-yellow-500"
-                                    : "bg-emerald-500"
-                                  : "bg-slate-200 dark:bg-slate-800"
+                                getPasswordStrengthColor(strength, level)
                               )}
                             />
                           );
                         })}
                       </div>
                       <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 ml-1">
-                        Strength: {
-                          getPasswordStrength(password) === 1 ? "Weak" :
-                          getPasswordStrength(password) === 2 ? "Fair" :
-                          getPasswordStrength(password) === 3 ? "Good" :
-                          "Strong"
-                        }
+                        Strength: {getPasswordStrengthLabel(getPasswordStrength(password))}
                       </p>
                     </div>
                   )}
@@ -580,7 +604,9 @@ export default function App() {
                   {viewHasPassword && (
                     <>
                       <div className="mb-6 relative">
+                        <label htmlFor="view-password-input" className="sr-only">Access password</label>
                         <input
+                          id="view-password-input"
                           type={showViewPassword ? "text" : "password"}
                           value={viewPassword}
                           onChange={(e) => setViewPassword(e.target.value)}

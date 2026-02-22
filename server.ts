@@ -15,13 +15,13 @@
 import express from "express";
 import Database from "better-sqlite3";
 import { v4 as uuidv4 } from "uuid";
-import path from "path";
-import fs from "fs";
+import path from "node:path";
+import fs from "node:fs";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import cors from "cors";
 import { z } from "zod";
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import ejs from 'ejs';
 
 /**
@@ -89,6 +89,53 @@ const CreateSecretSchema = z.object({
 const BurnSecretSchema = z.object({
   passwordHash: z.string().nullable().optional(),
 });
+
+/**
+ * BRUTE-FORCE PROTECTION LOGIC
+ * Extracted to reduce cognitive complexity.
+ * Returns null if verification passes, or an error object if it fails.
+ */
+function verifyPasswordAndHandleBruteForce(db: Database.Database, secret: any, passwordHash: string | null | undefined) {
+  if (!secret.password_hash) return null;
+
+  if (!passwordHash || passwordHash !== secret.password_hash) {
+    const newFailedAttempts = (secret.failed_attempts || 0) + 1;
+    const MAX_ATTEMPTS = 3;
+
+    if (newFailedAttempts >= MAX_ATTEMPTS) {
+      db.prepare("DELETE FROM secrets WHERE id = ?").run(secret.id);
+      console.log(`[Security] Secret ${secret.id} burned after ${MAX_ATTEMPTS} failed attempts.`);
+      return { status: 401, body: { error: "Too many failed attempts. Secret has been permanently deleted." } };
+    }
+
+    db.prepare("UPDATE secrets SET failed_attempts = ? WHERE id = ?").run(newFailedAttempts, secret.id);
+    return { 
+      status: 401, 
+      body: { error: `Invalid password. ${MAX_ATTEMPTS - newFailedAttempts} attempts remaining before permanent deletion.` } 
+    };
+  }
+
+  return null;
+}
+
+/**
+ * VIEW LIMIT LOGIC
+ * Extracted to reduce cognitive complexity.
+ */
+function handleViewLimit(db: Database.Database, secret: any) {
+  const newCount = secret.view_count + 1;
+  const isBurned = newCount >= secret.view_limit;
+  const remaining = Math.max(0, secret.view_limit - newCount);
+
+  if (isBurned) {
+    db.prepare("DELETE FROM secrets WHERE id = ?").run(secret.id);
+    console.log(`[ViewLimit] Secret ${secret.id} deleted after reaching view limit (${secret.view_limit}).`);
+  } else {
+    db.prepare("UPDATE secrets SET view_count = ? WHERE id = ?").run(newCount, secret.id);
+  }
+
+  return { success: true, burned: isBurned, remaining };
+}
 
 async function startServer() {
   const app = express();
@@ -246,6 +293,7 @@ async function startServer() {
 
     try {
       // ATOMIC TRANSACTION: Check, Verify, and Update/Delete in one go
+      // Refactored to keep cognitive complexity low (< 15)
       const transaction = db.transaction(() => {
         const secret = db.prepare("SELECT * FROM secrets WHERE id = ?").get(id) as any;
         
@@ -253,50 +301,14 @@ async function startServer() {
           return { status: 404, body: { error: "Not found" } };
         }
 
-        /**
-         * BRUTE-FORCE PROTECTION
-         */
-        if (secret.password_hash) {
-          if (!passwordHash || passwordHash !== secret.password_hash) {
-            const newFailedAttempts = (secret.failed_attempts || 0) + 1;
-            const MAX_ATTEMPTS = 3;
+        // 1. Verify password & handle brute force
+        const authError = verifyPasswordAndHandleBruteForce(db, secret, passwordHash);
+        if (authError) return authError;
 
-            if (newFailedAttempts >= MAX_ATTEMPTS) {
-              db.prepare("DELETE FROM secrets WHERE id = ?").run(id);
-              console.log(`[Security] Secret ${id} burned after ${MAX_ATTEMPTS} failed attempts.`);
-              return { status: 401, body: { error: "Too many failed attempts. Secret has been permanently deleted." } };
-            } else {
-              db.prepare("UPDATE secrets SET failed_attempts = ? WHERE id = ?").run(newFailedAttempts, id);
-              return { 
-                status: 401, 
-                body: { error: `Invalid password. ${MAX_ATTEMPTS - newFailedAttempts} attempts remaining before permanent deletion.` } 
-              };
-            }
-          }
-        }
+        // 2. Handle view limits and burning
+        const viewResult = handleViewLimit(db, secret);
 
-        /**
-         * VIEW LIMIT LOGIC
-         */
-        const newCount = secret.view_count + 1;
-        const isBurned = newCount >= secret.view_limit;
-        const remaining = Math.max(0, secret.view_limit - newCount);
-
-        if (isBurned) {
-          db.prepare("DELETE FROM secrets WHERE id = ?").run(id);
-          console.log(`[ViewLimit] Secret ${id} deleted after reaching view limit (${secret.view_limit}).`);
-        } else {
-          db.prepare("UPDATE secrets SET view_count = ? WHERE id = ?").run(newCount, id);
-        }
-
-        return { 
-          status: 200, 
-          body: { 
-            success: true, 
-            burned: isBurned,
-            remaining: remaining
-          }
-        };
+        return { status: 200, body: viewResult };
       });
 
       const txResult = transaction();
@@ -341,7 +353,8 @@ async function startServer() {
       try {
         const url = req.originalUrl;
         const template = await vite.transformIndexHtml(url, fs.readFileSync(path.resolve(process.cwd(), 'index.html'), 'utf-8'));
-        const renderedHtml = ejs.render(template, { nonce: res.locals.nonce });
+        // Use simple string replacement instead of ejs.render to avoid "dynamically formatted template" security warnings
+        const renderedHtml = template.replace(/<%= nonce %>/g, res.locals.nonce);
         res.status(200).set({ 'Content-Type': 'text/html' }).end(renderedHtml);
       } catch (e) {
         vite.ssrFixStacktrace(e as Error);
